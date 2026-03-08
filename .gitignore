@@ -13,3 +13,5 @@ logs/
 .cursor/
 .python-version
 uv.lock
+
+.DS_Store
