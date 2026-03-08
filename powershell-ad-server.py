@@ -676,6 +676,81 @@ def get_ad_domain_controller(identity: str = "", filter_expression: str = "", us
         }
 
 @mcp.tool()
+def get_ad_user_lockout_status(identity: str, user: str = "system") -> Dict[str, Any]:
+    """
+    Check if an Active Directory user account is locked out.
+    
+    Args:
+        identity: User identity (SamAccountName, UPN, DistinguishedName, GUID, or SID)
+        user: Username for audit logging
+    
+    Returns:
+        Dictionary containing lockout status or error details
+    """
+    try:
+        # Build PowerShell command
+        command = (
+            f"Get-ADUser -Identity '{identity}' "
+            "-Properties LockedOut,AccountLockoutTime "
+            "| Select-Object Name,SamAccountName,UserPrincipalName,LockedOut,AccountLockoutTime "
+            "| ConvertTo-Json -Depth 3"
+        )
+        
+        # Execute command
+        result = execute_powershell_command(command)
+        
+        # Log audit information
+        write_audit_log(
+            command=command,
+            user=user,
+            success=result["success"],
+            result=result["output"],
+            error=result["error"]
+        )
+        
+        if result["success"]:
+            try:
+                # Parse JSON output
+                lockout_data = json.loads(result["output"]) if result["output"] else {}
+                return {
+                    "success": True,
+                    "identity": identity,
+                    "locked_out": bool(lockout_data.get("LockedOut", False)) if isinstance(lockout_data, dict) else False,
+                    "account_lockout_time": lockout_data.get("AccountLockoutTime") if isinstance(lockout_data, dict) else None,
+                    "data": lockout_data,
+                    "command": command
+                }
+            except json.JSONDecodeError:
+                return {
+                    "success": True,
+                    "identity": identity,
+                    "data": result["output"],
+                    "command": command,
+                    "note": "Raw output (JSON parsing failed)"
+                }
+        else:
+            return {
+                "success": False,
+                "identity": identity,
+                "error": result["error"],
+                "command": command
+            }
+            
+    except Exception as e:
+        error_msg = f"Error executing lockout status check: {str(e)}"
+        write_audit_log(
+            command="Get-ADUser lockout status (failed validation)",
+            user=user,
+            success=False,
+            error=error_msg
+        )
+        return {
+            "success": False,
+            "identity": identity,
+            "error": error_msg
+        }
+
+@mcp.tool()
 def execute_custom_ad_get_command(command: str, user: str = "system") -> Dict[str, Any]:
     """
     Execute a custom Active Directory 'Get-' command with full validation.
